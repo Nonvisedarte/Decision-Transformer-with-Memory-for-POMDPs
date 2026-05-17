@@ -1132,6 +1132,9 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
                     device=device
                 )
             except Exception as e:
+                # if debug:
+                #    print(f"Error in evaluation: {e}")
+                #action = env.action_space.sample()
                 raise RuntimeError(
                     f"Evaluation failed at episode={episode + 1}, "
                     f"timestep={timestep}, "
@@ -1140,26 +1143,6 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
                     f"context_actions_shape={context_actions.shape}, "
                     f"context_rtgs_shape={context_rtgs.shape}"
                 ) from e
-
-                try:
-                    action = model.get_action(
-                        states=context_states,
-                        actions=context_actions,
-                        rtgs=context_rtgs.reshape(-1, 1),
-                        device=device
-                    )
-                except Exception as e:
-                    #if debug:
-                    #    print(f"Error in evaluation: {e}")
-                    #action = env.action_space.sample()
-                    raise RuntimeError(
-                        f"Evaluation failed at episode={episode + 1}, "
-                        f"timestep={timestep}, "
-                        f"context_size={context_size}, "
-                        f"context_states_shape={context_states.shape}, "
-                        f"context_actions_shape={context_actions.shape}, "
-                        f"context_rtgs_shape={context_rtgs.shape}"
-                    ) from e
 
             # take step in environment
             next_obs, reward, terminated, truncated, _ = env.step(action)
