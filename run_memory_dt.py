@@ -71,6 +71,14 @@ def parse_args():
                         help='Directory for experiment logs')
     parser.add_argument('--run_name', type=str, default=None,
                         help='Optional custom name for this run')
+    parser.add_argument("--eval_rtg_mode", type=str,default="constant",
+        choices=["constant", "history"],
+        help=(
+            "How to construct RTG context during evaluation: "
+            "'constant' keeps the original template behavior; "
+            "'history' uses per-timestep RTG history."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -205,6 +213,7 @@ def main():
         context_length=args.context_length,
         debug=args.debug,
         seed=args.seed + 10000,
+        eval_rtg_mode=args.eval_rtg_mode,
     )
     
     print(f"Evaluation complete. Mean return: {mean_return:.2f}, Success rate: {success_rate:.2%}")
@@ -217,6 +226,7 @@ def main():
         "run_dir": run_dir,
         "evaluated_checkpoint": "best" if not args.load_model else args.load_model,
         "target_return": target_return,
+        "eval_rtg_mode": args.eval_rtg_mode,
         "num_eval_episodes": args.eval_episodes,
         "mean_return": float(mean_return),
         "std_return": float(np.std(returns)),
@@ -287,7 +297,8 @@ def main():
         "success_rate",
         "mean_length",
         "std_length",
-        "run_dir"
+        "run_dir",
+        "eval_rtg_mode",
     ]
 
     file_exists = os.path.exists(summary_path)
@@ -321,7 +332,8 @@ def main():
             "success_rate": float(success_rate),
             "mean_length": float(np.mean(episode_lengths)),
             "std_length": float(np.std(episode_lengths)),
-            "run_dir": run_dir
+            "run_dir": run_dir,
+            "eval_rtg_mode": args.eval_rtg_mode,
         })
 
     print(f"Updated experiments summary: {summary_path}")

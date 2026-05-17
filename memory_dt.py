@@ -893,11 +893,14 @@ def train_memory_dt(
             
             # check for success
             if isinstance(val_env, VelocityCartPoleEnv) and episode_return >= 450:
-                successful_episodes += 1
+                ##successful_episodes += 1
+                episode_success = True
             elif isinstance(val_env, FlickeringPendulumEnv) and episode_return >= -250:
-                successful_episodes += 1
+                ##successful_episodes += 1
+                episode_success = True
             elif isinstance(val_env, LiDARMountainCarEnv) and done and timestep < max_steps:
-                successful_episodes += 1
+                ##successful_episodes += 1
+                episode_success = True
 
             successful_episodes += int(episode_success)
             returns.append(episode_return)
@@ -1205,11 +1208,14 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
         
         # check for success
         if isinstance(env, VelocityCartPoleEnv) and episode_return >= 450:
-            successful_episodes += 1
+            #successful_episodes += 1
+            episode_success = True
         elif isinstance(env, FlickeringPendulumEnv) and episode_return >= -250:
-            successful_episodes += 1
+            #successful_episodes += 1
+            episode_success = True
         elif isinstance(env, LiDARMountainCarEnv) and done and timestep < max_steps:
-            successful_episodes += 1
+            #successful_episodes += 1
+            episode_success = True
 
         successful_episodes += int(episode_success)
         returns.append(episode_return)
