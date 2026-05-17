@@ -856,22 +856,6 @@ def train_memory_dt(
                 # calculate return-to-go
                 rtg = target_return - episode_return
                 context_rtgs = np.full(context_size, rtg)
-
-                try:
-                    action = model.get_action(
-                        states=context_states,
-                        actions=context_actions,
-                        rtgs=context_rtgs.reshape(-1, 1),
-                        device=device
-                    )
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Evaluation failed at timestep={timestep}, "
-                        f"context_size={context_size}, "
-                        f"context_states_shape={context_states.shape}, "
-                        f"context_actions_shape={context_actions.shape}, "
-                        f"context_rtgs_shape={context_rtgs.shape}"
-                    ) from e
                     
                 try:
                     action = model.get_action(
@@ -1105,25 +1089,58 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
             
             states.append(processed_obs)
             
+            # # Get action
+            # if len(states) <= 1:
+            #     # first timestep, use default action
+            #     action = 0
+            # else:
+            #     # use model to predict action
+            #     context_size = min(len(states), context_length)
+            #     context_states = np.array(states[-context_size:])
+            #
+            #     # prepare action context
+            #     if len(actions) >= context_size - 1:
+            #         context_actions = np.array(actions[-(context_size-1):] + [0])
+            #     else:
+            #         context_actions = np.array(actions + [0] * (context_size - 1 - len(actions)))
+            #
+            #     # calculate return-to-go
+            #     rtg = target_return - episode_return
+            #     context_rtgs = np.full(context_size, rtg)
+
             # Get action
-            if len(states) <= 1:
-                # first timestep, use default action
-                action = 0
+            context_size = min(len(states), context_length)
+            context_states = np.array(states[-context_size:])
+
+            # prepare action context
+            if len(actions) >= context_size - 1:
+                context_actions = np.array(actions[-(context_size - 1):] + [0])
             else:
-                # use model to predict action
-                context_size = min(len(states), context_length)
-                context_states = np.array(states[-context_size:])
-                
-                # prepare action context
-                if len(actions) >= context_size - 1:
-                    context_actions = np.array(actions[-(context_size-1):] + [0])
-                else:
-                    context_actions = np.array(actions + [0] * (context_size - 1 - len(actions)))
-                
-                # calculate return-to-go
-                rtg = target_return - episode_return
-                context_rtgs = np.full(context_size, rtg)
-                
+                context_actions = np.array(
+                    actions + [0] * (context_size - 1 - len(actions))
+                )
+
+            # calculate return-to-go
+            rtg = target_return - episode_return
+            context_rtgs = np.full(context_size, rtg)
+
+            try:
+                action = model.get_action(
+                    states=context_states,
+                    actions=context_actions,
+                    rtgs=context_rtgs.reshape(-1, 1),
+                    device=device
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"Evaluation failed at episode={episode + 1}, "
+                    f"timestep={timestep}, "
+                    f"context_size={context_size}, "
+                    f"context_states_shape={context_states.shape}, "
+                    f"context_actions_shape={context_actions.shape}, "
+                    f"context_rtgs_shape={context_rtgs.shape}"
+                ) from e
+
                 try:
                     action = model.get_action(
                         states=context_states,
