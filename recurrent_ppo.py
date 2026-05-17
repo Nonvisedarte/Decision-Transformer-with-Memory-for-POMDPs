@@ -414,7 +414,7 @@ class RecurrentPPO:
                           f"Actor Loss: {actor_loss.item():.4f}, Critic Loss: {critic_loss.item():.4f}, "
                           f"Entropy: {policy_entropy:.4f}, KL: {approx_kl:.4f}, Clip fraction: {clipfrac:.4f}")
     
-    def collect_trajectories(self, num_trajectories, render=False):
+    def collect_trajectories(self, num_trajectories, render=False, rtg_gamma=1.0):
         all_states = []
         all_actions = []
         all_rewards = []
@@ -462,7 +462,8 @@ class RecurrentPPO:
             
             returns = 0
             for r in reversed(rewards):
-                returns = r + self.gamma * returns
+                ##returns = r + self.gamma * returns
+                returns = r + rtg_gamma * returns
                 rtgs.append(returns)
             rtgs.reverse()
             
@@ -480,7 +481,7 @@ class RecurrentPPO:
         
         return all_states, all_actions, all_rewards, all_dones, all_rtgs, all_timesteps
     
-    def save_trajectories(self, output_dir, num_trajectories=1000):
+    def save_trajectories(self, output_dir, num_trajectories=1000, rtg_gamma=1.0):
         """
         Collect and save trajectories for training a Decision Transformer.
         Only save trajectories where total reward >= reward_threshold.
@@ -494,7 +495,7 @@ class RecurrentPPO:
         max_attempts = num_trajectories * 3
         
         while saved_count < num_trajectories and attempt_count < max_attempts:
-            states, actions, rewards, dones, rtgs, timesteps = self.collect_trajectories(1)
+            states, actions, rewards, dones, rtgs, timesteps = self.collect_trajectories(1, rtg_gamma=rtg_gamma)
             
             total_reward = sum(rewards[0])
             meets_threshold = True
@@ -508,7 +509,9 @@ class RecurrentPPO:
                     'reward': rewards[0],
                     'done': dones[0],
                     'rtg': rtgs[0],
-                    'timesteps': timesteps[0]
+                    'timesteps': timesteps[0],
+                    'rtg_gamma': np.array(rtg_gamma),
+                    'ppo_gamma': np.array(self.gamma),
                 }
                 
                 file_path = f'{output_dir}/train_data_{saved_count}.npz'

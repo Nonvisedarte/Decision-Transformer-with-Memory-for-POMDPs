@@ -36,6 +36,9 @@ def parse_args():
                         help='Reward threshold for collecting data. If None, all trajectories are collected. '
                              'Environment max rewards: CartPole: 500.0, FlickeringPendulum: -200.0, LiDARMountainCar: -100.0. '
                              'Recommended thresholds: CartPole: 475.0, FlickeringPendulum: ???, LiDARMountainCar: ???')
+    parser.add_argument('--rtg_gamma', type=float, default=1.0,
+        help='Discount factor used only for return-to-go saved in DT dataset. '
+             'Use 1.0 for standard undiscounted Decision Transformer RTG.')
     return parser.parse_args()
 
 
@@ -114,7 +117,7 @@ def main():
     
     # Collect trajectories
     print(f"Collecting {args.num_trajectories} trajectories...")
-    ppo_agent.save_trajectories(output_dir, args.num_trajectories)
+    ppo_agent.save_trajectories(output_dir, args.num_trajectories, rtg_gamma=args.rtg_gamma)
     
     print("Done!")
 
