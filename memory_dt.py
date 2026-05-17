@@ -356,15 +356,43 @@ def train_memory_dt(
     if run_config is not None and "seed" in run_config:
         seed = run_config["seed"]
 
-    dataset = POMDPDataset(dataset_path, block_size=context_length*3)
-    
+    all_files = sorted(glob.glob(os.path.join(dataset_path, 'train_data_*.npz')))
+
+    if len(all_files) < 2:
+        raise ValueError(
+            f"Need at least 2 trajectory files for train/val split, got {len(all_files)}"
+        )
+
+    rng = np.random.default_rng(seed)
+    shuffled_files = all_files.copy()
+    rng.shuffle(shuffled_files)
+
+    n_train_files = int(0.9 * len(shuffled_files))
+    n_train_files = max(1, min(n_train_files, len(shuffled_files) - 1))
+
+    train_files = shuffled_files[:n_train_files]
+    val_files = shuffled_files[n_train_files:]
+
+    dataset = POMDPDataset(dataset_path, block_size=context_length * 3, files=all_files)
+
     # split into train/val
-    train_size = int(0.9 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, [train_size, val_size], 
-        generator=torch.Generator().manual_seed(seed)
+    train_dataset = POMDPDataset(
+        dataset_path,
+        block_size=context_length * 3,
+        files=train_files,
+        vocab_size=dataset.vocab_size,
     )
+
+    val_dataset = POMDPDataset(
+        dataset_path,
+        block_size=context_length * 3,
+        files=val_files,
+        vocab_size=dataset.vocab_size,
+    )
+
+    train_size = len(train_dataset)
+    val_size = len(val_dataset)
+
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, generator=torch.Generator().manual_seed(seed))
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -458,6 +486,9 @@ def train_memory_dt(
             "rtg_std": rtg_stats["rtg_std"],
             "rtg_min": rtg_stats["rtg_min"],
             "rtg_max": rtg_stats["rtg_max"],
+            "num_trajectory_files": len(all_files),
+            "num_train_trajectory_files": len(train_files),
+            "num_val_trajectory_files": len(val_files),
         }
 
         dataset_info_path = os.path.join(run_dir, "dataset_info.json")
