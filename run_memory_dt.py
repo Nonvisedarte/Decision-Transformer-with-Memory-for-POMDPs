@@ -194,6 +194,114 @@ def main():
     
     print(f"Evaluation complete. Mean return: {mean_return:.2f}, Success rate: {success_rate:.2%}")
 
+    final_eval = {
+        "env": args.env,
+        "memory_label": memory_label,
+        "memory_type": memory_label,
+        "run_name": run_name,
+        "run_dir": run_dir,
+        "target_return": target_return,
+        "num_eval_episodes": args.eval_episodes,
+        "mean_return": float(mean_return),
+        "std_return": float(np.std(returns)),
+        "min_return": float(np.min(returns)),
+        "max_return": float(np.max(returns)),
+        "success_rate": float(success_rate),
+        "returns": [float(r) for r in returns]
+    }
+
+    final_eval_path = os.path.join(run_dir, "final_eval.json")
+    with open(final_eval_path, "w", encoding="utf-8") as f:
+        json.dump(final_eval, f, indent=2)
+
+    print(f"Saved final evaluation to: {final_eval_path}")
+
+    eval_episodes_path = os.path.join(run_dir, "eval_episodes.csv")
+    with open(eval_episodes_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "episode",
+                "return",
+                "success"
+            ]
+        )
+        writer.writeheader()
+
+        for episode_idx, episode_return in enumerate(returns, start=1):
+            writer.writerow({
+                "episode": episode_idx,
+                "return": float(episode_return),
+                "success": int(
+                    episode_return >= 450.0 if args.env == "velocity_cartpole"
+                    else episode_return >= -250.0 if args.env == "flickering_pendulum"
+                    else episode_return >= -100.0 if args.env == "lidar_mountain_car"
+                    else False
+                )
+            })
+
+    print(f"Saved evaluation episodes to: {eval_episodes_path}")
+
+    summary_path = os.path.join(args.results_dir, "experiments_summary.csv")
+    os.makedirs(args.results_dir, exist_ok=True)
+
+    summary_fieldnames = [
+        "run_name",
+        "env",
+        "memory_type",
+        "context_length",
+        "seed",
+        "n_epochs",
+        "batch_size",
+        "n_embed",
+        "n_layer",
+        "n_head",
+        "memory_dim",
+        "learning_rate",
+        "weight_decay",
+        "target_return",
+        "num_eval_episodes",
+        "mean_return",
+        "std_return",
+        "min_return",
+        "max_return",
+        "success_rate",
+        "run_dir"
+    ]
+
+    file_exists = os.path.exists(summary_path)
+
+    with open(summary_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=summary_fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow({
+            "run_name": run_name,
+            "env": args.env,
+            "memory_type": memory_label,
+            "context_length": args.context_length,
+            "seed": args.seed,
+            "n_epochs": args.n_epochs,
+            "batch_size": args.batch_size,
+            "n_embed": args.n_embed,
+            "n_layer": args.n_layer,
+            "n_head": args.n_head,
+            "memory_dim": args.memory_dim,
+            "learning_rate": args.learning_rate,
+            "weight_decay": args.weight_decay,
+            "target_return": target_return,
+            "num_eval_episodes": args.eval_episodes,
+            "mean_return": float(mean_return),
+            "std_return": float(np.std(returns)),
+            "min_return": float(np.min(returns)),
+            "max_return": float(np.max(returns)),
+            "success_rate": float(success_rate),
+            "run_dir": run_dir
+        })
+
+    print(f"Updated experiments summary: {summary_path}")
 
 if __name__ == "__main__":
     main() 
