@@ -102,7 +102,8 @@ def main():
         ppo_agent.policy.load_state_dict(torch.load(model_path))
     # Case 2 & 3: Either checkpoint doesn't exist or --collect_data_from_checkpoint=False
     else:
-        train_timesteps = 300000 if args.env == 'velocity_cartpole' else args.train_timesteps
+        #train_timesteps = 300000 if args.env == 'velocity_cartpole' else args.train_timesteps
+        train_timesteps = args.train_timesteps
         train_reason = "from scratch" if not checkpoint_exists else "ignoring existing checkpoint"
         print(f"Training recurrent PPO agent {train_reason} on {args.env} for {train_timesteps} timesteps...")
         ppo_agent.learn(total_timesteps=train_timesteps)

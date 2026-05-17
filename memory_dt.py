@@ -131,12 +131,23 @@ class MemoryDecisionTransformer(nn.Module):
         # Memory module (optional)
         if memory_type == 'gru':
             # TODO: Implement GRU memory
+            self.memory = nn.GRU(
+                input_size=n_embed,
+                hidden_size=memory_dim,
+                batch_first=True
+            )
             self.memory_proj = nn.Linear(memory_dim, n_embed)
         elif memory_type == 'lstm':
             # TODO: Implement LSTM memory
+            self.memory = nn.LSTM(
+                input_size=n_embed,
+                hidden_size=memory_dim,
+                batch_first=True
+            )
             self.memory_proj = nn.Linear(memory_dim, n_embed)
         else:
             self.memory = None
+            self.memory_proj = None
         
         # Transformer
         transformer_layer = nn.TransformerEncoderLayer(
@@ -183,30 +194,64 @@ class MemoryDecisionTransformer(nn.Module):
         
         # add memory
         if self.memory is not None:
+            batch_size = state_embeddings.size(0)
+            device = state_embeddings.device
+
             if self.memory_type == 'gru':
-                if self.hidden_state is None:
-                    # TODO: Implement GRU memory
-                
-                memory_out, self.hidden_state = self.memory(state_embeddings, self.hidden_state)
+                # TODO: Implement GRU memory
+                h0 = torch.zeros(
+                    1,
+                    batch_size,
+                    self.memory.hidden_size,
+                    device=device
+                )
+
+                memory_out, _ = self.memory(state_embeddings, h0)
+                ##memory_out, self.hidden_state = self.memory(state_embeddings, h0)
+
             elif self.memory_type == 'lstm':
-                if self.hidden_state is None:
-                    # TODO: Implement LSTM memory
-                
-                memory_out, self.hidden_state = self.memory(state_embeddings, self.hidden_state)
-            
+                # TODO: Implement LSTM memory
+                h0 = torch.zeros(
+                    1,
+                    batch_size,
+                    self.memory.hidden_size,
+                    device=device
+                )
+                c0 = torch.zeros(
+                    1,
+                    batch_size,
+                    self.memory.hidden_size,
+                    device=device
+                )
+
+                memory_out, _ = self.memory(state_embeddings, (h0, c0))
+                #memory_out, self.hidden_state = self.memory(state_embeddings, (h0, c0))
+
             # project memory to embedding dimension
             memory_embedding = self.memory_proj(memory_out)
-            
+
             # combine memory with state embeddings
             state_embeddings = state_embeddings + memory_embedding
         
         # prepare sequence for transformer (R_t, o_t, a_t)
-        sequence = torch.cat([
-            return_embeddings, 
-            state_embeddings,
-            action_embeddings
-        ], dim=1)
-        
+        # sequence = torch.cat([
+        #     return_embeddings,
+        #     state_embeddings,
+        #     action_embeddings
+        # ], dim=1)
+
+        sequence = torch.zeros(
+            batch_size,
+            seq_length * 3,
+            self.n_embed,
+            dtype=state_embeddings.dtype,
+            device=state_embeddings.device
+        )
+
+        sequence[:, 0::3, :] = return_embeddings
+        sequence[:, 1::3, :] = state_embeddings
+        sequence[:, 2::3, :] = action_embeddings
+
         # add positional encoding
         sequence = self.pos_encoder(sequence)
         
@@ -229,8 +274,9 @@ class MemoryDecisionTransformer(nn.Module):
                 transformer_outputs = self.transformer(sequence)
         
         # extract state positions for output
-        state_positions = transformer_outputs[:, seq_length:2*seq_length]
-        
+        #state_positions = transformer_outputs[:, seq_length:2*seq_length]
+        state_positions = transformer_outputs[:, 1::3, :]
+
         # predict actions
         action_preds = self.action_head(state_positions)
         
