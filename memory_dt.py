@@ -656,6 +656,7 @@ def train_memory_dt(
     train_losses, val_losses, val_returns = [], [], []
     best_val_return = float('-inf')
     best_model_state = None
+    best_epoch = None
     patience, patience_counter = 5, 0
     
     for epoch in range(n_epochs):
@@ -791,6 +792,7 @@ def train_memory_dt(
             actions = []
             
             episode_return = 0
+            episode_success = False
             done = False
             timestep = 0
             max_steps = 500
@@ -896,7 +898,8 @@ def train_memory_dt(
                 successful_episodes += 1
             elif isinstance(val_env, LiDARMountainCarEnv) and done and timestep < max_steps:
                 successful_episodes += 1
-            
+
+            successful_episodes += int(episode_success)
             returns.append(episode_return)
             episode_lengths.append(timestep)
             print(f"Episode {episode+1}: Return={episode_return:.1f}, Steps={timestep}")
@@ -924,6 +927,7 @@ def train_memory_dt(
         # early stopping and model saving
         if mean_return > best_val_return:
             best_val_return = mean_return
+            best_epoch = epoch + 1
             best_model_state = copy.deepcopy(model.state_dict()) #model.state_dict()
             print(f"New best model with return {best_val_return:.2f}")
             patience_counter = 0
@@ -983,7 +987,28 @@ def train_memory_dt(
 
     torch.save(state_to_save, best_model_path)
     print(f"Best model saved to {best_model_path}")
-    
+
+    model.load_state_dict(state_to_save)
+    model.reset_memory()
+    model.eval()
+    print("Loaded best checkpoint weights back into model for final evaluation.")
+
+    best_metadata = {
+        "best_model_path": best_model_path,
+        "best_epoch": best_epoch,
+        "best_val_return": float(best_val_return),
+        "loaded_back_into_returned_model": True,
+    }
+
+    best_metadata_path = os.path.join(
+        save_dir,
+        f"memory_dt_{env_name}_{memory_type}_best_metadata.json"
+    )
+    with open(best_metadata_path, "w", encoding="utf-8") as f:
+        json.dump(best_metadata, f, indent=2)
+
+    print(f"Best checkpoint metadata saved to {best_metadata_path}")
+
     if hasattr(val_env, 'close'):
         val_env.close()
     
@@ -1016,7 +1041,7 @@ def train_memory_dt(
     return model, train_losses, val_returns
 
 
-def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=None, context_length=20, debug=False, return_success_rate=True, seed=None):
+def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=None, context_length=20, debug=False, return_success_rate=True, seed=None, eval_rtg_mode="constant"):
     """
     Evaluate a trained Memory Decision Transformer.
     
@@ -1065,8 +1090,10 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
         
         states = []
         actions = []
+        rtg_history = []
         
         episode_return = 0
+        episode_success = False
         done = False
         timestep = 0
         max_steps = 1000
@@ -1086,7 +1113,9 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
                     ])
             else:
                 processed_obs = obs
-            
+
+            current_rtg = target_return - episode_return
+            rtg_history.append(current_rtg)
             states.append(processed_obs)
             
             # # Get action
@@ -1121,8 +1150,25 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
                 )
 
             # calculate return-to-go
-            rtg = target_return - episode_return
-            context_rtgs = np.full(context_size, rtg)
+            # rtg = target_return - episode_return
+            # context_rtgs = np.full(context_size, rtg)
+
+            if eval_rtg_mode == "constant":
+                # simple behavior:
+                # use current desired return for every token in the context.
+                rtg = target_return - episode_return
+                context_rtgs = np.full(context_size, rtg, dtype=np.float32)
+
+            elif eval_rtg_mode == "history":
+                # Decision-Transformer-consistent behavior:
+                # each state token gets the desired return that was current at that timestep.
+                context_rtgs = np.array(rtg_history[-context_size:], dtype=np.float32)
+
+            else:
+                raise ValueError(
+                    f"Unknown eval_rtg_mode={eval_rtg_mode}. "
+                    "Expected 'constant' or 'history'."
+                )
 
             try:
                 action = model.get_action(
@@ -1164,7 +1210,8 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
             successful_episodes += 1
         elif isinstance(env, LiDARMountainCarEnv) and done and timestep < max_steps:
             successful_episodes += 1
-        
+
+        successful_episodes += int(episode_success)
         returns.append(episode_return)
         episode_lengths.append(timestep)
         print(f"Episode {episode+1}: Return={episode_return:.1f}, Steps={timestep}")

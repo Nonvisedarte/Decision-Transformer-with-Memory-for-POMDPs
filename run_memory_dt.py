@@ -215,6 +215,7 @@ def main():
         "memory_type": memory_label,
         "run_name": run_name,
         "run_dir": run_dir,
+        "evaluated_checkpoint": "best" if not args.load_model else args.load_model,
         "target_return": target_return,
         "num_eval_episodes": args.eval_episodes,
         "mean_return": float(mean_return),
