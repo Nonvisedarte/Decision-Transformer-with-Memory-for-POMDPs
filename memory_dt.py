@@ -176,12 +176,14 @@ class MemoryDecisionTransformer(nn.Module):
         self.action_head = nn.Linear(n_embed, n_actions)
         
         self.hidden_state = None
+        self.inference_memory_cache = []
     
     def reset_memory(self):
         """Reset the memory state."""
         self.hidden_state = None
+        self.inference_memory_cache = []
     
-    def forward(self, states, actions, rtgs):
+    def forward(self, states, actions, rtgs, memory_override=None):
         """Forward pass."""
         batch_size, seq_length = states.shape[0], states.shape[1]
         
@@ -207,47 +209,56 @@ class MemoryDecisionTransformer(nn.Module):
         
         # add memory
         if self.memory is not None:
-            batch_size = state_embeddings.size(0)
-            device = state_embeddings.device
+            if memory_override is not None:
+                memory_out = memory_override
+            else:
+                batch_size = state_embeddings.size(0)
+                device = state_embeddings.device
 
-            if self.memory_type == 'gru':
-                # TODO: Implement GRU memory
-                if (
-                        self.hidden_state is None
-                        or self.hidden_state.size(1) != batch_size
-                        or self.hidden_state.device != device
-                ):
-                    self.hidden_state = torch.zeros(
-                        1,
-                        batch_size,
-                        self.memory.hidden_size,
-                        device=device
+                if self.memory_type == 'gru':
+                    # TODO: Implement GRU memory
+                    if (
+                            self.hidden_state is None
+                            or self.hidden_state.size(1) != batch_size
+                            or self.hidden_state.device != device
+                    ):
+                        self.hidden_state = torch.zeros(
+                            1,
+                            batch_size,
+                            self.memory.hidden_size,
+                            device=device
+                        )
+
+                    memory_out, self.hidden_state = self.memory(
+                        state_embeddings,
+                        self.hidden_state
                     )
 
-                memory_out, self.hidden_state = self.memory(state_embeddings,self.hidden_state)
+                elif self.memory_type == 'lstm':
+                    # TODO: Implement LSTM memory
+                    if (
+                            self.hidden_state is None
+                            or self.hidden_state[0].size(1) != batch_size
+                            or self.hidden_state[0].device != device
+                    ):
+                        h0 = torch.zeros(
+                            1,
+                            batch_size,
+                            self.memory.hidden_size,
+                            device=device
+                        )
+                        c0 = torch.zeros(
+                            1,
+                            batch_size,
+                            self.memory.hidden_size,
+                            device=device
+                        )
+                        self.hidden_state = (h0, c0)
 
-            elif self.memory_type == 'lstm':
-                # TODO: Implement LSTM memory
-                if (
-                        self.hidden_state is None
-                        or self.hidden_state[0].size(1) != batch_size
-                        or self.hidden_state[0].device != device
-                ):
-                    h0 = torch.zeros(
-                        1,
-                        batch_size,
-                        self.memory.hidden_size,
-                        device=device
+                    memory_out, self.hidden_state = self.memory(
+                        state_embeddings,
+                        self.hidden_state
                     )
-                    c0 = torch.zeros(
-                        1,
-                        batch_size,
-                        self.memory.hidden_size,
-                        device=device
-                    )
-                    self.hidden_state = (h0, c0)
-
-                memory_out, self.hidden_state = self.memory(state_embeddings,self.hidden_state)
 
             # project memory to embedding dimension
             memory_embedding = self.memory_proj(memory_out)
@@ -303,6 +314,72 @@ class MemoryDecisionTransformer(nn.Module):
         action_preds = self.action_head(state_positions)
         
         return action_preds
+
+    def update_inference_memory(self, latest_state):
+        """Update recurrent memory with only the newest observation.
+
+        This method is used during online evaluation to avoid repeatedly
+        processing overlapping sliding windows with the recurrent module.
+        """
+        if self.memory is None:
+            return None
+
+        latest_state = torch.nan_to_num(latest_state)
+        state_embedding = self.state_encoder(latest_state)
+
+        batch_size = state_embedding.size(0)
+        device = state_embedding.device
+
+        if self.memory_type == 'gru':
+            if (
+                    self.hidden_state is None
+                    or self.hidden_state.size(1) != batch_size
+                    or self.hidden_state.device != device
+            ):
+                self.hidden_state = torch.zeros(
+                    1,
+                    batch_size,
+                    self.memory.hidden_size,
+                    device=device
+                )
+
+            memory_out, self.hidden_state = self.memory(
+                state_embedding,
+                self.hidden_state
+            )
+
+        elif self.memory_type == 'lstm':
+            if (
+                    self.hidden_state is None
+                    or self.hidden_state[0].size(1) != batch_size
+                    or self.hidden_state[0].device != device
+            ):
+                h0 = torch.zeros(
+                    1,
+                    batch_size,
+                    self.memory.hidden_size,
+                    device=device
+                )
+                c0 = torch.zeros(
+                    1,
+                    batch_size,
+                    self.memory.hidden_size,
+                    device=device
+                )
+                self.hidden_state = (h0, c0)
+
+            memory_out, self.hidden_state = self.memory(
+                state_embedding,
+                self.hidden_state
+            )
+
+        else:
+            return None
+
+        memory_out = memory_out.detach()
+        self.inference_memory_cache.append(memory_out)
+
+        return memory_out
     
     def get_action(self, states, actions, rtgs, device=None):
         """Get a single action for inference."""
@@ -339,7 +416,33 @@ class MemoryDecisionTransformer(nn.Module):
         
         # forward pass
         with torch.no_grad():
-            action_preds = self.forward(states, actions, rtgs)
+            if self.memory_type in ['gru', 'lstm']:
+                latest_state = states[:, -1:, :]
+                self.update_inference_memory(latest_state)
+
+                seq_len = states.shape[1]
+
+                memory_override = torch.cat(
+                    self.inference_memory_cache[-seq_len:],
+                    dim=1
+                )
+
+                if memory_override.shape[1] != seq_len:
+                    raise RuntimeError(
+                        f"Memory cache/context mismatch: "
+                        f"memory_override length={memory_override.shape[1]}, "
+                        f"context length={seq_len}"
+                    )
+
+                action_preds = self.forward(
+                    states,
+                    actions,
+                    rtgs,
+                    memory_override=memory_override
+                )
+            else:
+                action_preds = self.forward(states, actions, rtgs)
+
             action = torch.argmax(action_preds[0, -1]).item()
         
         return action
@@ -719,43 +822,75 @@ def train_memory_dt(
                 
                 states.append(processed_obs)
                 
+                # # get action
+                # if len(states) <= 1:
+                #     # first timestep, use default action
+                #     action = 0
+                # else:
+                #     # use model to predict action
+                #     context_size = min(len(states), context_length)
+                #     context_states = np.array(states[-context_size:])
+                #
+                #     # prepare action context
+                #     if len(actions) >= context_size - 1:
+                #         context_actions = np.array(actions[-(context_size-1):] + [0])
+                #     else:
+                #         context_actions = np.array(actions + [0] * (context_size - 1 - len(actions)))
+                #
+                #     # calculate return-to-go
+                #     rtg = target_return - episode_return
+                #     context_rtgs = np.full(context_size, rtg)
+
                 # get action
-                if len(states) <= 1:
-                    # first timestep, use default action
-                    action = 0
+                context_size = min(len(states), context_length)
+                context_states = np.array(states[-context_size:])
+
+                # prepare action context
+                if len(actions) >= context_size - 1:
+                    context_actions = np.array(actions[-(context_size - 1):] + [0])
                 else:
-                    # use model to predict action
-                    context_size = min(len(states), context_length)
-                    context_states = np.array(states[-context_size:])
+                    context_actions = np.array(
+                        actions + [0] * (context_size - 1 - len(actions))
+                    )
+
+                # calculate return-to-go
+                rtg = target_return - episode_return
+                context_rtgs = np.full(context_size, rtg)
+
+                try:
+                    action = model.get_action(
+                        states=context_states,
+                        actions=context_actions,
+                        rtgs=context_rtgs.reshape(-1, 1),
+                        device=device
+                    )
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Evaluation failed at timestep={timestep}, "
+                        f"context_size={context_size}, "
+                        f"context_states_shape={context_states.shape}, "
+                        f"context_actions_shape={context_actions.shape}, "
+                        f"context_rtgs_shape={context_rtgs.shape}"
+                    ) from e
                     
-                    # prepare action context
-                    if len(actions) >= context_size - 1:
-                        context_actions = np.array(actions[-(context_size-1):] + [0])
-                    else:
-                        context_actions = np.array(actions + [0] * (context_size - 1 - len(actions)))
-                    
-                    # calculate return-to-go
-                    rtg = target_return - episode_return
-                    context_rtgs = np.full(context_size, rtg)
-                    
-                    try:
-                        action = model.get_action(
-                            states=context_states,
-                            actions=context_actions,
-                            rtgs=context_rtgs.reshape(-1, 1),
-                            device=device
-                        )
-                    except Exception as e:
-                        #print(f"Error in evaluation: {e}")
-                        #action = val_env.action_space.sample()
-                        raise RuntimeError(
-                            f"Evaluation failed at epoch={epoch + 1}, "
-                            f"episode={episode + 1}, timestep={timestep}, "
-                            f"context_size={context_size}, "
-                            f"context_states_shape={context_states.shape}, "
-                            f"context_actions_shape={context_actions.shape}, "
-                            f"context_rtgs_shape={context_rtgs.shape}"
-                        ) from e
+                try:
+                    action = model.get_action(
+                        states=context_states,
+                        actions=context_actions,
+                        rtgs=context_rtgs.reshape(-1, 1),
+                        device=device
+                    )
+                except Exception as e:
+                    #print(f"Error in evaluation: {e}")
+                    #action = val_env.action_space.sample()
+                    raise RuntimeError(
+                        f"Evaluation failed at epoch={epoch + 1}, "
+                        f"episode={episode + 1}, timestep={timestep}, "
+                        f"context_size={context_size}, "
+                        f"context_states_shape={context_states.shape}, "
+                        f"context_actions_shape={context_actions.shape}, "
+                        f"context_rtgs_shape={context_rtgs.shape}"
+                    ) from e
 
                 # take step in environment
                 next_obs, reward, terminated, truncated, _ = val_env.step(action)

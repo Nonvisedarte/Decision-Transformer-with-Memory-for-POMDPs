@@ -492,7 +492,7 @@ class RecurrentPPO:
         
         saved_count = 0
         attempt_count = 0
-        max_attempts = num_trajectories * 3
+        max_attempts = num_trajectories * 5 #* 3
         
         while saved_count < num_trajectories and attempt_count < max_attempts:
             states, actions, rewards, dones, rtgs, timesteps = self.collect_trajectories(1, rtg_gamma=rtg_gamma)
