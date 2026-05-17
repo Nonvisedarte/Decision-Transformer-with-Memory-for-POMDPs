@@ -31,6 +31,7 @@ class POMDPDataset(Dataset):
             vocab_size: Optional fixed number of discrete actions
         """
         self.block_size = block_size
+        self.context_length = block_size // 3
         
         import glob
         import os
@@ -46,6 +47,7 @@ class POMDPDataset(Dataset):
         self.rtgs = []
         self.timesteps = []
         self.done_idxs = []
+        self.windows = []
         
         current_idx = 0
         
@@ -53,20 +55,38 @@ class POMDPDataset(Dataset):
             data = np.load(file_path)
             
             seq_length = len(data['obs'])
+            traj_start = current_idx
+            traj_end = current_idx + seq_length
             
             self.states.append(data['obs'])
             self.actions.append(data['action'])
             self.rtgs.append(data['rtg'])
             self.timesteps.append(data['timesteps'])
             
+            # if seq_length > 0:
+            #     self.done_idxs.append(current_idx + seq_length - 1)
+            #     current_idx += seq_length
             if seq_length > 0:
-                self.done_idxs.append(current_idx + seq_length - 1)
-                current_idx += seq_length
-        
+                self.done_idxs.append(traj_end - 1)
+
+                if seq_length >= self.context_length:
+                    for start in range(traj_start, traj_end - self.context_length + 1):
+                        end = start + self.context_length
+                        self.windows.append((start, end))
+
+                current_idx = traj_end
+
         self.states = np.concatenate(self.states, axis=0)
         self.actions = np.concatenate(self.actions, axis=0)
         self.rtgs = np.concatenate(self.rtgs, axis=0)
         self.timesteps = np.concatenate(self.timesteps, axis=0)
+
+        if len(self.windows) == 0:
+            raise ValueError(
+                f"No valid trajectory windows found. "
+                f"context_length={self.context_length}. "
+                "Check that your trajectories are not shorter than context_length."
+            )
         
         # compute vocabulary size (number of possible actions)
         if vocab_size is None:
@@ -80,28 +100,39 @@ class POMDPDataset(Dataset):
             self.state_dim = self.states.shape[1] if len(self.states.shape) > 1 else 1
     
     def __len__(self):
-        return len(self.states) - self.block_size
-    
+        #return len(self.states) - self.block_size
+        return len(self.windows)
+
+    # def __getitem__(self, idx):
+    #     # endpoint of the current segment
+    #     block_size = self.block_size // 3
+    #     done_idx = idx + block_size
+    #
+    #     # make sure we don't cross trajectory boundaries
+    #     for i in self.done_idxs:
+    #         if i > idx:  # first done_idx greater than idx
+    #             done_idx = min(int(i), done_idx)
+    #             break
+    #
+    #     # adjust start index to maintain block_size
+    #     idx = done_idx - block_size
+    #
+    #     # get data segments
+    #     states = torch.tensor(self.states[idx:done_idx], dtype=torch.float32)
+    #     actions = torch.tensor(self.actions[idx:done_idx], dtype=torch.long).unsqueeze(1)
+    #     rtgs = torch.tensor(self.rtgs[idx:done_idx], dtype=torch.float32).unsqueeze(1)
+    #     timesteps = torch.tensor(self.timesteps[idx:idx+1], dtype=torch.int64).unsqueeze(1)
+    #
+    #     return states, actions, rtgs, timesteps
+
     def __getitem__(self, idx):
-        # endpoint of the current segment
-        block_size = self.block_size // 3
-        done_idx = idx + block_size
-        
-        # make sure we don't cross trajectory boundaries
-        for i in self.done_idxs:
-            if i > idx:  # first done_idx greater than idx
-                done_idx = min(int(i), done_idx)
-                break
-        
-        # adjust start index to maintain block_size
-        idx = done_idx - block_size
-        
-        # get data segments
-        states = torch.tensor(self.states[idx:done_idx], dtype=torch.float32)
-        actions = torch.tensor(self.actions[idx:done_idx], dtype=torch.long).unsqueeze(1)
-        rtgs = torch.tensor(self.rtgs[idx:done_idx], dtype=torch.float32).unsqueeze(1)
-        timesteps = torch.tensor(self.timesteps[idx:idx+1], dtype=torch.int64).unsqueeze(1)
-        
+        start, end = self.windows[idx]
+
+        states = torch.tensor(self.states[start:end], dtype=torch.float32)
+        actions = torch.tensor(self.actions[start:end], dtype=torch.long).unsqueeze(1)
+        rtgs = torch.tensor(self.rtgs[start:end], dtype=torch.float32).unsqueeze(1)
+        timesteps = torch.tensor(self.timesteps[start:end], dtype=torch.int64).unsqueeze(1)
+
         return states, actions, rtgs, timesteps
 
 
