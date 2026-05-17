@@ -741,6 +741,7 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
             target_return = 500.0
     
     returns = []
+    episode_lengths = []
     successful_episodes = 0
     
     for episode in range(num_episodes):
@@ -826,6 +827,7 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
             successful_episodes += 1
         
         returns.append(episode_return)
+        episode_lengths.append(timestep)
         print(f"Episode {episode+1}: Return={episode_return:.1f}, Steps={timestep}")
     
     mean_return = np.mean(returns)
@@ -836,9 +838,9 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
     print(f"Success Rate: {success_rate:.2%}")
     
     if return_success_rate:
-        return mean_return, returns, success_rate
+        return mean_return, returns, success_rate, episode_lengths
     else:
-        return mean_return, returns
+        return mean_return, returns, episode_lengths
 
 
 def preprocess_obs(obs):

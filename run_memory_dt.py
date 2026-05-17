@@ -182,7 +182,7 @@ def main():
     model.to(device)
     
     print(f"Evaluating model on {args.env}...")
-    mean_return, returns, success_rate = evaluate_memory_dt(
+    mean_return, returns, success_rate, episode_lengths = evaluate_memory_dt(
         model=model,
         env=env,
         num_episodes=args.eval_episodes,
@@ -207,7 +207,8 @@ def main():
         "min_return": float(np.min(returns)),
         "max_return": float(np.max(returns)),
         "success_rate": float(success_rate),
-        "returns": [float(r) for r in returns]
+        "returns": [float(r) for r in returns],
+        "lengths": [int(l) for l in episode_lengths]
     }
 
     final_eval_path = os.path.join(run_dir, "final_eval.json")
@@ -223,6 +224,7 @@ def main():
             fieldnames=[
                 "episode",
                 "return",
+                "length",
                 "success"
             ]
         )
@@ -232,6 +234,7 @@ def main():
             writer.writerow({
                 "episode": episode_idx,
                 "return": float(episode_return),
+                "length": int(episode_lengths[episode_idx - 1]),
                 "success": int(
                     episode_return >= 450.0 if args.env == "velocity_cartpole"
                     else episode_return >= -250.0 if args.env == "flickering_pendulum"
@@ -266,6 +269,8 @@ def main():
         "min_return",
         "max_return",
         "success_rate",
+        "mean_length",
+        "std_length",
         "run_dir"
     ]
 
@@ -298,6 +303,8 @@ def main():
             "min_return": float(np.min(returns)),
             "max_return": float(np.max(returns)),
             "success_rate": float(success_rate),
+            "mean_length": float(np.mean(episode_lengths)),
+            "std_length": float(np.std(episode_lengths)),
             "run_dir": run_dir
         })
 
