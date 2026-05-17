@@ -9,6 +9,8 @@ import gymnasium as gym
 import csv
 import json
 import time
+import copy
+import glob
 
 from pomdp_envs.velocity_cartpole import VelocityCartPoleEnv
 from pomdp_envs.flickering_pendulum import FlickeringPendulumEnv
@@ -18,21 +20,26 @@ import matplotlib.pyplot as plt
 
 
 class POMDPDataset(Dataset):
-    def __init__(self, data_dir, block_size):
+    def __init__(self, data_dir, block_size, files=None, vocab_size=None):
         """
         Dataset for POMDP environments.
         
         Args:
             data_dir: Directory containing trajectory data
             block_size: Context length for the transformer
+            files: Optional list of trajectory .npz files to load
+            vocab_size: Optional fixed number of discrete actions
         """
         self.block_size = block_size
         
         import glob
         import os
-        
-        files = glob.glob(os.path.join(data_dir, 'train_data_*.npz'))
-        files.sort()
+
+        if files is None:
+            files = glob.glob(os.path.join(data_dir, 'train_data_*.npz'))
+            files.sort()
+        else:
+            files = list(files)
         
         self.states = []
         self.actions = []
@@ -62,7 +69,10 @@ class POMDPDataset(Dataset):
         self.timesteps = np.concatenate(self.timesteps, axis=0)
         
         # compute vocabulary size (number of possible actions)
-        self.vocab_size = int(np.max(self.actions)) + 1
+        if vocab_size is None:
+            self.vocab_size = int(np.max(self.actions)) + 1
+        else:
+            self.vocab_size = int(vocab_size)
         
         if len(self.states.shape) > 2:
             self.state_dim = np.prod(self.states.shape[1:])
@@ -202,33 +212,42 @@ class MemoryDecisionTransformer(nn.Module):
 
             if self.memory_type == 'gru':
                 # TODO: Implement GRU memory
-                h0 = torch.zeros(
-                    1,
-                    batch_size,
-                    self.memory.hidden_size,
-                    device=device
-                )
+                if (
+                        self.hidden_state is None
+                        or self.hidden_state.size(1) != batch_size
+                        or self.hidden_state.device != device
+                ):
+                    self.hidden_state = torch.zeros(
+                        1,
+                        batch_size,
+                        self.memory.hidden_size,
+                        device=device
+                    )
 
-                memory_out, _ = self.memory(state_embeddings, h0)
-                ##memory_out, self.hidden_state = self.memory(state_embeddings, h0)
+                memory_out, self.hidden_state = self.memory(state_embeddings,self.hidden_state)
 
             elif self.memory_type == 'lstm':
                 # TODO: Implement LSTM memory
-                h0 = torch.zeros(
-                    1,
-                    batch_size,
-                    self.memory.hidden_size,
-                    device=device
-                )
-                c0 = torch.zeros(
-                    1,
-                    batch_size,
-                    self.memory.hidden_size,
-                    device=device
-                )
+                if (
+                        self.hidden_state is None
+                        or self.hidden_state[0].size(1) != batch_size
+                        or self.hidden_state[0].device != device
+                ):
+                    h0 = torch.zeros(
+                        1,
+                        batch_size,
+                        self.memory.hidden_size,
+                        device=device
+                    )
+                    c0 = torch.zeros(
+                        1,
+                        batch_size,
+                        self.memory.hidden_size,
+                        device=device
+                    )
+                    self.hidden_state = (h0, c0)
 
-                memory_out, _ = self.memory(state_embeddings, (h0, c0))
-                #memory_out, self.hidden_state = self.memory(state_embeddings, (h0, c0))
+                memory_out, self.hidden_state = self.memory(state_embeddings,self.hidden_state)
 
             # project memory to embedding dimension
             memory_embedding = self.memory_proj(memory_out)
@@ -333,7 +352,10 @@ def train_memory_dt(
         run_dir=None, run_config=None
     ):
     """Train a Memory-enabled Decision Transformer."""
-    
+    seed = 42
+    if run_config is not None and "seed" in run_config:
+        seed = run_config["seed"]
+
     dataset = POMDPDataset(dataset_path, block_size=context_length*3)
     
     # split into train/val
@@ -341,13 +363,72 @@ def train_memory_dt(
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(
         dataset, [train_size, val_size], 
-        generator=torch.Generator().manual_seed(42)
+        generator=torch.Generator().manual_seed(seed)
     )
-    
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, generator=torch.Generator().manual_seed(seed))
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
     print(f"Dataset stats: total={len(dataset)}, train={train_size}, val={val_size}, state_dim={dataset.state_dim}, actions={dataset.vocab_size}")
+
+    dataset_action_counts = np.zeros(dataset.vocab_size, dtype=np.int64)
+    all_rtgs = []
+
+    for i in range(len(dataset)):
+        _, sample_actions, sample_rtgs, _ = dataset[i]
+
+        sample_actions = torch.as_tensor(sample_actions)
+        if sample_actions.dim() > 1 and sample_actions.shape[-1] == 1:
+            sample_actions = sample_actions.squeeze(-1)
+
+        sample_actions = sample_actions.long().view(-1)
+        valid_actions = sample_actions[
+            (sample_actions >= 0) & (sample_actions < dataset.vocab_size)
+            ]
+
+        if valid_actions.numel() > 0:
+            dataset_action_counts += torch.bincount(
+                valid_actions.cpu(),
+                minlength=dataset.vocab_size
+            ).numpy()
+
+        sample_rtgs = torch.as_tensor(sample_rtgs).float().view(-1)
+        all_rtgs.append(sample_rtgs.cpu().numpy())
+
+    all_rtgs = np.concatenate(all_rtgs) if len(all_rtgs) > 0 else np.array([])
+
+    dataset_action_total = int(dataset_action_counts.sum())
+    dataset_action_distribution = (
+        (dataset_action_counts / max(dataset_action_total, 1)).tolist()
+    )
+
+    rtg_stats = {
+        "rtg_mean": float(np.mean(all_rtgs)) if all_rtgs.size > 0 else None,
+        "rtg_std": float(np.std(all_rtgs)) if all_rtgs.size > 0 else None,
+        "rtg_min": float(np.min(all_rtgs)) if all_rtgs.size > 0 else None,
+        "rtg_max": float(np.max(all_rtgs)) if all_rtgs.size > 0 else None,
+    }
+
+    epoch_metric_fields = [
+        "epoch",
+        "train_loss",
+        "val_loss",
+        "train_action_accuracy",
+        "val_action_accuracy",
+        "grad_norm_mean",
+        "grad_norm_max",
+        "eval_mean_return",
+        "eval_return_std",
+        "eval_return_min",
+        "eval_return_max",
+        "eval_success_rate",
+        "eval_length_mean",
+        "eval_length_std",
+        "eval_action_counts_json",
+        "best_val_return",
+        "learning_rate",
+        "epoch_time_sec",
+    ]
 
     epoch_metrics_path = None
     if run_dir is not None:
@@ -370,7 +451,13 @@ def train_memory_dt(
             "n_head": n_head,
             "memory_dim": memory_dim,
             "learning_rate": learning_rate,
-            "weight_decay": weight_decay
+            "weight_decay": weight_decay,
+            "dataset_action_counts": dataset_action_counts.tolist(),
+            "dataset_action_distribution": dataset_action_distribution,
+            "rtg_mean": rtg_stats["rtg_mean"],
+            "rtg_std": rtg_stats["rtg_std"],
+            "rtg_min": rtg_stats["rtg_min"],
+            "rtg_max": rtg_stats["rtg_max"],
         }
 
         dataset_info_path = os.path.join(run_dir, "dataset_info.json")
@@ -381,16 +468,7 @@ def train_memory_dt(
         with open(epoch_metrics_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(
                 f,
-                fieldnames=[
-                    "epoch",
-                    "train_loss",
-                    "val_loss",
-                    "eval_mean_return",
-                    "eval_success_rate",
-                    "best_val_return",
-                    "learning_rate",
-                    "epoch_time_sec"
-                ]
+                fieldnames=epoch_metric_fields
             )
             writer.writeheader()
 
@@ -421,7 +499,10 @@ def train_memory_dt(
         val_env = LiDARMountainCarEnv(num_sensors=8)
     else:
         raise ValueError(f"Unknown environment: {env_name}")
-    
+
+    if hasattr(val_env, "action_space"):
+        val_env.action_space.seed(seed)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     
     # linear warmup followed by cosine annealing (as in original DT paper)
@@ -449,6 +530,9 @@ def train_memory_dt(
         # TRAIN PHASE
         model.train()
         epoch_loss = 0
+        train_correct = 0
+        train_total = 0
+        grad_norms = []
         progress_bar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{n_epochs} [Train]")
         
         for batch_idx, (states, actions, rtgs, _) in enumerate(progress_bar):
@@ -466,6 +550,13 @@ def train_memory_dt(
             model.reset_memory()
             
             action_preds = model(states, actions, rtgs)
+
+            with torch.no_grad():
+                pred_actions = torch.argmax(action_preds, dim=-1)
+                train_correct += (
+                        pred_actions.reshape(-1) == actions.reshape(-1)
+                ).sum().item()
+                train_total += actions.numel()
             
             loss = criterion(
                 action_preds.reshape(-1, dataset.vocab_size),
@@ -475,8 +566,10 @@ def train_memory_dt(
             optimizer.zero_grad()
             loss.backward()
             
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            
+            ##torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            grad_norms.append(float(grad_norm))
+
             optimizer.step()
             scheduler.step()
             
@@ -487,13 +580,19 @@ def train_memory_dt(
                 'avg_loss': f"{epoch_loss / (batch_idx + 1):.4f}",
                 'lr': f"{optimizer.param_groups[0]['lr']:.6f}"
             })
-        
+
         avg_train_loss = epoch_loss / len(train_dataloader)
+        train_action_accuracy = train_correct / max(train_total, 1)
+        grad_norm_mean = float(np.mean(grad_norms)) if len(grad_norms) > 0 else 0.0
+        grad_norm_max = float(np.max(grad_norms)) if len(grad_norms) > 0 else 0.0
+
         train_losses.append(avg_train_loss)
         
         # VALIDATION ON DATASET
         model.eval()
         val_epoch_loss = 0
+        val_correct = 0
+        val_total = 0
         
         with torch.no_grad():
             for states, actions, rtgs, _ in val_dataloader:
@@ -508,20 +607,33 @@ def train_memory_dt(
                     actions = actions.squeeze(-1)
                 
                 model.reset_memory()
-                
+
                 action_preds = model(states, actions, rtgs)
+
+                pred_actions = torch.argmax(action_preds, dim=-1)
+                val_correct += (
+                        pred_actions.reshape(-1) == actions.reshape(-1)
+                ).sum().item()
+                val_total += actions.numel()
+
                 val_loss = criterion(
                     action_preds.reshape(-1, dataset.vocab_size),
                     actions.reshape(-1)
                 )
                 
                 val_epoch_loss += val_loss.item()
-        
+
         avg_val_loss = val_epoch_loss / len(val_dataloader)
+        val_action_accuracy = val_correct / max(val_total, 1)
         val_losses.append(avg_val_loss)
-        
-        print(f"Epoch {epoch+1}/{n_epochs}: Train Loss={avg_train_loss:.4f}, Val Loss={avg_val_loss:.4f}")
-        
+
+        print(
+            f"Epoch {epoch + 1}/{n_epochs}: "
+            f"Train Loss={avg_train_loss:.4f}, "
+            f"Val Loss={avg_val_loss:.4f}, "
+            f"Train Acc={train_action_accuracy:.3f}, "
+            f"Val Acc={val_action_accuracy:.3f}"
+        )
         # VALIDATION ON ENVIRONMENT - fixed for reliable results
         print("Running environment validation...")
         model.eval()
@@ -531,11 +643,14 @@ def train_memory_dt(
         
         # keep track of episode returns
         returns = []
+        episode_lengths = []
+        eval_action_counts = np.zeros(dataset.vocab_size, dtype=np.int64)
         successful_episodes = 0
         num_eval_episodes = 10
         
         for episode in range(num_eval_episodes):
-            obs, _ = val_env.reset()
+            ##obs, _ = val_env.reset()
+            obs, _ = val_env.reset(seed=seed + episode)
             model.reset_memory()  # reset memory state for each episode (always do this!)
             
             states = []
@@ -600,15 +715,26 @@ def train_memory_dt(
                             device=device
                         )
                     except Exception as e:
-                        print(f"Error in evaluation: {e}")
-                        action = val_env.action_space.sample()
-                
+                        #print(f"Error in evaluation: {e}")
+                        #action = val_env.action_space.sample()
+                        raise RuntimeError(
+                            f"Evaluation failed at epoch={epoch + 1}, "
+                            f"episode={episode + 1}, timestep={timestep}, "
+                            f"context_size={context_size}, "
+                            f"context_states_shape={context_states.shape}, "
+                            f"context_actions_shape={context_actions.shape}, "
+                            f"context_rtgs_shape={context_rtgs.shape}"
+                        ) from e
+
                 # take step in environment
                 next_obs, reward, terminated, truncated, _ = val_env.step(action)
                 done = terminated or truncated
                 
                 actions.append(action)
                 episode_return += reward
+
+                if 0 <= int(action) < dataset.vocab_size:
+                    eval_action_counts[int(action)] += 1
                 
                 obs = next_obs
                 timestep += 1
@@ -622,19 +748,33 @@ def train_memory_dt(
                 successful_episodes += 1
             
             returns.append(episode_return)
+            episode_lengths.append(timestep)
             print(f"Episode {episode+1}: Return={episode_return:.1f}, Steps={timestep}")
         
         # calculate evaluation metrics
-        mean_return = np.mean(returns)
+        mean_return = float(np.mean(returns))
+        return_std = float(np.std(returns))
+        return_min = float(np.min(returns))
+        return_max = float(np.max(returns))
+
+        length_mean = float(np.mean(episode_lengths))
+        length_std = float(np.std(episode_lengths))
+
         success_rate = successful_episodes / num_eval_episodes
         val_returns.append(mean_return)
-        
-        print(f"Validation: Mean Return={mean_return:.2f}, Success Rate={success_rate:.2%}")
-        
+
+        print(
+            f"Validation: Mean Return={mean_return:.2f}, "
+            f"Std={return_std:.2f}, "
+            f"Min={return_min:.2f}, "
+            f"Max={return_max:.2f}, "
+            f"Success Rate={success_rate:.2%}"
+        )
+
         # early stopping and model saving
         if mean_return > best_val_return:
             best_val_return = mean_return
-            best_model_state = model.state_dict()
+            best_model_state = copy.deepcopy(model.state_dict()) #model.state_dict()
             print(f"New best model with return {best_val_return:.2f}")
             patience_counter = 0
         else:
@@ -647,26 +787,27 @@ def train_memory_dt(
             with open(epoch_metrics_path, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
                     f,
-                    fieldnames=[
-                        "epoch",
-                        "train_loss",
-                        "val_loss",
-                        "eval_mean_return",
-                        "eval_success_rate",
-                        "best_val_return",
-                        "learning_rate",
-                        "epoch_time_sec"
-                    ]
+                    fieldnames=epoch_metric_fields
                 )
                 writer.writerow({
                     "epoch": epoch + 1,
                     "train_loss": avg_train_loss,
                     "val_loss": avg_val_loss,
+                    "train_action_accuracy": train_action_accuracy,
+                    "val_action_accuracy": val_action_accuracy,
+                    "grad_norm_mean": grad_norm_mean,
+                    "grad_norm_max": grad_norm_max,
                     "eval_mean_return": mean_return,
+                    "eval_return_std": return_std,
+                    "eval_return_min": return_min,
+                    "eval_return_max": return_max,
                     "eval_success_rate": success_rate,
+                    "eval_length_mean": length_mean,
+                    "eval_length_std": length_std,
+                    "eval_action_counts_json": json.dumps(eval_action_counts.tolist()),
                     "best_val_return": best_val_return,
                     "learning_rate": optimizer.param_groups[0]["lr"],
-                    "epoch_time_sec": epoch_time_sec
+                    "epoch_time_sec": epoch_time_sec,
                 })
 
         if patience_counter >= patience:
@@ -674,9 +815,23 @@ def train_memory_dt(
             break
     
     # save best model
-    os.makedirs('models', exist_ok=True)
-    best_model_path = f"models/memory_dt_{env_name}_{memory_type}_best.pt"
-    torch.save(best_model_state if best_model_state else model.state_dict(), best_model_path)
+    if run_dir is not None:
+        save_dir = run_dir
+    else:
+        save_dir = "models"
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    best_model_path = os.path.join(
+        save_dir,
+        f"memory_dt_{env_name}_{memory_type}_best.pt"
+    )
+
+    state_to_save = best_model_state
+    if state_to_save is None:
+        state_to_save = copy.deepcopy(model.state_dict())
+
+    torch.save(state_to_save, best_model_path)
     print(f"Best model saved to {best_model_path}")
     
     if hasattr(val_env, 'close'):
@@ -700,13 +855,18 @@ def train_memory_dt(
     plt.ylabel('Mean Return')
     
     plt.tight_layout()
-    plt.savefig(f"models/memory_dt_{env_name}_{memory_type}_training.png")
+    ##plt.savefig(f"models/memory_dt_{env_name}_{memory_type}_training.png")
+    training_plot_path = os.path.join(
+        save_dir,
+        f"memory_dt_{env_name}_{memory_type}_training.png"
+    )
+    plt.savefig(training_plot_path)
     plt.close()
     
     return model, train_losses, val_returns
 
 
-def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=None, context_length=20, debug=False, return_success_rate=True):
+def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=None, context_length=20, debug=False, return_success_rate=True, seed=None):
     """
     Evaluate a trained Memory Decision Transformer.
     
@@ -729,6 +889,8 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
     model.reset_memory() # always reset memory when evaluating
     
     device = next(model.parameters()).device
+    if seed is not None and hasattr(env, "action_space"):
+        env.action_space.seed(seed)
     
     if target_return is None:
         if isinstance(env, VelocityCartPoleEnv):
@@ -745,7 +907,10 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
     successful_episodes = 0
     
     for episode in range(num_episodes):
-        obs, _ = env.reset()
+        if seed is not None:
+            obs, _ = env.reset(seed=seed + episode)
+        else:
+            obs, _ = env.reset()
         model.reset_memory()  # reset memory state for each episode
         
         states = []
@@ -801,10 +966,18 @@ def evaluate_memory_dt(model, env, num_episodes=10, render=False, target_return=
                         device=device
                     )
                 except Exception as e:
-                    if debug:
-                        print(f"Error in evaluation: {e}")
-                    action = env.action_space.sample()
-            
+                    #if debug:
+                    #    print(f"Error in evaluation: {e}")
+                    #action = env.action_space.sample()
+                    raise RuntimeError(
+                        f"Evaluation failed at episode={episode + 1}, "
+                        f"timestep={timestep}, "
+                        f"context_size={context_size}, "
+                        f"context_states_shape={context_states.shape}, "
+                        f"context_actions_shape={context_actions.shape}, "
+                        f"context_rtgs_shape={context_rtgs.shape}"
+                    ) from e
+
             # take step in environment
             next_obs, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated

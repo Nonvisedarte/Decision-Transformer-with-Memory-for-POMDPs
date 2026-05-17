@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import gymnasium as gym
+import random
 import json
 import csv
 from datetime import datetime
@@ -13,6 +14,18 @@ from pomdp_envs.flickering_pendulum import FlickeringPendulumEnv
 from pomdp_envs.lidar_mountain_car import LiDARMountainCarEnv
 from memory_dt import train_memory_dt, evaluate_memory_dt, MemoryDecisionTransformer
 
+def set_global_seed(seed, deterministic=False):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -109,6 +122,7 @@ def load_model(model_path, env, args):
 
 def main():
     args = parse_args()
+    set_global_seed(args.seed)
 
     memory_label = args.memory_type
 
@@ -189,7 +203,8 @@ def main():
         render=args.render,
         target_return=target_return,
         context_length=args.context_length,
-        debug=args.debug
+        debug=args.debug,
+        seed=args.seed + 10000,
     )
     
     print(f"Evaluation complete. Mean return: {mean_return:.2f}, Success rate: {success_rate:.2%}")
