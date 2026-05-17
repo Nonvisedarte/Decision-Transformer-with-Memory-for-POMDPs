@@ -6,6 +6,9 @@ from torch.utils.data import Dataset, DataLoader
 import os
 from tqdm import tqdm
 import gymnasium as gym
+import csv
+import json
+import time
 
 from pomdp_envs.velocity_cartpole import VelocityCartPoleEnv
 from pomdp_envs.flickering_pendulum import FlickeringPendulumEnv
@@ -326,7 +329,8 @@ class MemoryDecisionTransformer(nn.Module):
 def train_memory_dt(
         env_name, dataset_path, n_epochs=10, batch_size=64, context_length=20,
         n_embed=128, n_layer=2, n_head=4, memory_type='gru', memory_dim=64,
-        learning_rate=1e-4, weight_decay=1e-4, debug=False
+        learning_rate=1e-4, weight_decay=1e-4, debug=False,
+        run_dir=None, run_config=None
     ):
     """Train a Memory-enabled Decision Transformer."""
     
@@ -344,7 +348,55 @@ def train_memory_dt(
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
     print(f"Dataset stats: total={len(dataset)}, train={train_size}, val={val_size}, state_dim={dataset.state_dim}, actions={dataset.vocab_size}")
-    
+
+    epoch_metrics_path = None
+    if run_dir is not None:
+        os.makedirs(run_dir, exist_ok=True)
+
+        dataset_info = {
+            "dataset_path": dataset_path,
+            "total_samples": len(dataset),
+            "train_size": train_size,
+            "val_size": val_size,
+            "state_dim": int(dataset.state_dim),
+            "vocab_size": int(dataset.vocab_size),
+            "context_length": context_length,
+            "block_size": context_length * 3,
+            "memory_type": memory_type,
+            "n_epochs": n_epochs,
+            "batch_size": batch_size,
+            "n_embed": n_embed,
+            "n_layer": n_layer,
+            "n_head": n_head,
+            "memory_dim": memory_dim,
+            "learning_rate": learning_rate,
+            "weight_decay": weight_decay
+        }
+
+        dataset_info_path = os.path.join(run_dir, "dataset_info.json")
+        with open(dataset_info_path, "w", encoding="utf-8") as f:
+            json.dump(dataset_info, f, indent=2)
+
+        epoch_metrics_path = os.path.join(run_dir, "epoch_metrics.csv")
+        with open(epoch_metrics_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "epoch",
+                    "train_loss",
+                    "val_loss",
+                    "eval_mean_return",
+                    "eval_success_rate",
+                    "best_val_return",
+                    "learning_rate",
+                    "epoch_time_sec"
+                ]
+            )
+            writer.writeheader()
+
+        print(f"Saved dataset info to: {dataset_info_path}")
+        print(f"Epoch metrics will be saved to: {epoch_metrics_path}")
+
     model = MemoryDecisionTransformer(
         state_dim=dataset.state_dim,
         n_actions=dataset.vocab_size,
@@ -392,6 +444,8 @@ def train_memory_dt(
     patience, patience_counter = 5, 0
     
     for epoch in range(n_epochs):
+        epoch_start_time = time.time()
+
         # TRAIN PHASE
         model.train()
         epoch_loss = 0
@@ -585,9 +639,39 @@ def train_memory_dt(
             patience_counter = 0
         else:
             patience_counter += 1
-            if patience_counter >= patience:
-                print(f"Early stopping at epoch {epoch+1}")
-                break
+
+        # Save epoch-level metrics
+        epoch_time_sec = time.time() - epoch_start_time
+
+        if epoch_metrics_path is not None:
+            with open(epoch_metrics_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "epoch",
+                        "train_loss",
+                        "val_loss",
+                        "eval_mean_return",
+                        "eval_success_rate",
+                        "best_val_return",
+                        "learning_rate",
+                        "epoch_time_sec"
+                    ]
+                )
+                writer.writerow({
+                    "epoch": epoch + 1,
+                    "train_loss": avg_train_loss,
+                    "val_loss": avg_val_loss,
+                    "eval_mean_return": mean_return,
+                    "eval_success_rate": success_rate,
+                    "best_val_return": best_val_return,
+                    "learning_rate": optimizer.param_groups[0]["lr"],
+                    "epoch_time_sec": epoch_time_sec
+                })
+
+        if patience_counter >= patience:
+            print(f"Early stopping at epoch {epoch + 1}")
+            break
     
     # save best model
     os.makedirs('models', exist_ok=True)

@@ -4,6 +4,9 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import gymnasium as gym
+import json
+import csv
+from datetime import datetime
 
 from pomdp_envs.velocity_cartpole import VelocityCartPoleEnv
 from pomdp_envs.flickering_pendulum import FlickeringPendulumEnv
@@ -49,6 +52,13 @@ def parse_args():
                         help='Path to pre-trained model to load (skip training)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug output')
+    parser.add_argument('--seed', type=int, default=123,
+                        help='Random seed')
+    parser.add_argument('--results_dir', type=str, default='results',
+                        help='Directory for experiment logs')
+    parser.add_argument('--run_name', type=str, default=None,
+                        help='Optional custom name for this run')
+
     return parser.parse_args()
 
 
@@ -89,7 +99,7 @@ def load_model(model_path, env, args):
         context_length=args.context_length,
         memory_type=args.memory_type if args.memory_type != 'none' else None,
         memory_dim=args.memory_dim,
-        debug=args.debug
+        ##debug=args.debug
     )
     
     model.load_state_dict(torch.load(model_path, map_location='cpu'))
@@ -99,7 +109,9 @@ def load_model(model_path, env, args):
 
 def main():
     args = parse_args()
-    
+
+    memory_label = args.memory_type
+
     if args.memory_type == 'none':
         args.memory_type = None
     
@@ -115,7 +127,33 @@ def main():
         target_return = -100.0  # the goal is to reach the flag with minimum steps
     else:
         target_return = args.target_return if args.target_return is not None else 500.0
-    
+
+    # Create a separate directory for this experiment run
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = args.run_name or (
+        f"{timestamp}_{args.env}_{memory_label}"
+        f"_ctx{args.context_length}_seed{args.seed}"
+    )
+
+    run_dir = os.path.join(args.results_dir, "runs", run_name)
+    os.makedirs(run_dir, exist_ok=True)
+
+    print(f"Run directory: {run_dir}")
+
+    # Save run configuration
+    config_to_save = vars(args).copy()
+    config_to_save["memory_label"] = memory_label
+    config_to_save["run_name"] = run_name
+    config_to_save["run_dir"] = run_dir
+    config_to_save["dataset_path"] = dataset_path
+    config_to_save["resolved_target_return"] = target_return
+
+    config_path = os.path.join(run_dir, "config.json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config_to_save, f, indent=2)
+
+    print(f"Saved config to: {config_path}")
+
     if args.load_model:
         print(f"Loading pre-trained model from {args.load_model}")
         model = load_model(args.load_model, env, args)
@@ -135,7 +173,9 @@ def main():
             memory_dim=args.memory_dim,
             learning_rate=args.learning_rate,
             weight_decay=args.weight_decay,
-            debug=args.debug
+            debug=args.debug,
+            run_dir=run_dir,
+            run_config=config_to_save
         )
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
