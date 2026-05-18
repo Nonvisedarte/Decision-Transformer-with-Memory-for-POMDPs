@@ -1,0 +1,17 @@
+run_name,env,memory_type,context_length,seed,n_epochs,batch_size,n_embed,n_layer,n_head,memory_dim,learning_rate,weight_decay,target_return,num_eval_episodes,mean_return,std_return,min_return,max_return,success_rate,mean_length,std_length,run_dir,eval_rtg_mode,tdm_decay,model_label
+none_rtg420_seed123,velocity_cartpole,none,20,123,10,64,64,3,4,64,0.001,0.0001,420.0,20,456.6,10.561249926026749,441.0,472.0,0.7,456.6,10.561249926026749,results\runs\none_rtg420_seed123,constant,,none
+none_rtg450_seed123,velocity_cartpole,none,20,123,10,64,64,3,4,64,0.001,0.0001,450.0,20,486.8,11.5697882435246,473.0,500.0,1.0,486.8,11.5697882435246,results\runs\none_rtg450_seed123,constant,,none
+none_rtg480_seed123,velocity_cartpole,none,20,123,10,64,64,3,4,64,0.001,0.0001,480.0,20,498.85,3.4824560298731697,487.0,500.0,1.0,498.85,3.4824560298731697,results\runs\none_rtg480_seed123,constant,,none
+baseline_none_seed123,velocity_cartpole,none,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\baseline_none_seed123,constant,,none
+gru_rtg420_seed123,velocity_cartpole,gru,20,123,10,64,64,3,4,64,0.001,0.0001,420.0,20,475.15,3.468068626771968,469.0,483.0,1.0,475.15,3.468068626771968,results\runs\gru_rtg420_seed123,constant,,gru
+gru_rtg450_seed123,velocity_cartpole,gru,20,123,10,64,64,3,4,64,0.001,0.0001,450.0,20,498.75,2.2555487137279924,491.0,500.0,1.0,498.75,2.2555487137279924,results\runs\gru_rtg450_seed123,constant,,gru
+gru_rtg480_seed123,velocity_cartpole,gru,20,123,10,64,64,3,4,64,0.001,0.0001,480.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\gru_rtg480_seed123,constant,,gru
+gru_seed123,velocity_cartpole,gru,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\gru_seed123,constant,,gru
+lstm_rtg420_seed123,velocity_cartpole,lstm,20,123,10,64,64,3,4,64,0.001,0.0001,420.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\lstm_rtg420_seed123,constant,,lstm
+lstm_rtg450_seed123,velocity_cartpole,lstm,20,123,10,64,64,3,4,64,0.001,0.0001,450.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\lstm_rtg450_seed123,constant,,lstm
+lstm_rtg480_seed123,velocity_cartpole,lstm,20,123,10,64,64,3,4,64,0.001,0.0001,480.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\lstm_rtg480_seed123,constant,,lstm
+lstm_seed123,velocity_cartpole,lstm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\lstm_seed123,constant,,lstm
+tdm_decay70_rtg420_ctx20_seed123,velocity_cartpole,tdm,20,123,10,64,64,3,4,64,0.001,0.0001,420.0,20,458.5,5.835237784358063,448.0,467.0,0.95,458.5,5.835237784358063,results\runs\tdm_decay70_rtg420_ctx20_seed123,constant,0.7,tdm decay=0.7
+tdm_decay70_rtg450_ctx20_seed123,velocity_cartpole,tdm,20,123,10,64,64,3,4,64,0.001,0.0001,450.0,20,487.35,5.632716928800878,477.0,498.0,1.0,487.35,5.632716928800878,results\runs\tdm_decay70_rtg450_ctx20_seed123,constant,0.7,tdm decay=0.7
+tdm_decay70_rtg480_ctx20_seed123,velocity_cartpole,tdm,20,123,10,64,64,3,4,64,0.001,0.0001,480.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\tdm_decay70_rtg480_ctx20_seed123,constant,0.7,tdm decay=0.7
+tdm_decay70_ctx20_seed123,velocity_cartpole,tdm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\tdm_decay70_ctx20_seed123,constant,0.7,tdm decay=0.7

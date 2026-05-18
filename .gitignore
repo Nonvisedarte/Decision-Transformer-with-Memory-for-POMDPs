@@ -8,3 +8,25 @@ __pycache__/
 *.pyz
 *.pt
 .DS_Store
+# --- local / IDE ---
+.idea/
+.ipynb_checkpoints/
+
+# --- experiment scratch artifacts ---
+pomdp_datasets_subsets/
+plots/
+
+# --- results: ignore raw experiment outputs by default ---
+results/*
+
+# --- keep final report artifacts ---
+!results/final_plots/
+!results/final_plots/*.png
+
+!results/dataset_stats_velocity_cartpole.txt
+
+!results/final_context_ablation_summary.csv
+!results/final_dataset_size_ablation_summary.csv
+!results/final_rtg_ablation_summary.csv
+!results/final_tdm_decay_ablation_summary.csv
+!results/final_training_dynamics_summary.csv

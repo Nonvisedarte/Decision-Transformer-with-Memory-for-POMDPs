@@ -1,0 +1,5 @@
+run_name,env,memory_type,context_length,seed,n_epochs,batch_size,n_embed,n_layer,n_head,memory_dim,learning_rate,weight_decay,target_return,num_eval_episodes,mean_return,std_return,min_return,max_return,success_rate,mean_length,std_length,run_dir,eval_rtg_mode,tdm_decay,model_label
+tdm_seed123,velocity_cartpole,tdm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,430.5,158.55298798824322,12.0,500.0,0.85,430.5,158.55298798824322,results\runs\tdm_seed123,constant,0.9,tdm decay=0.9
+tdm_decay70_ctx20_seed123,velocity_cartpole,tdm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\tdm_decay70_ctx20_seed123,constant,0.7,tdm decay=0.7
+tdm_ctx50_seed123,velocity_cartpole,tdm,50,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,498.15,8.063963045550246,463.0,500.0,1.0,498.15,8.063963045550246,results\runs\tdm_ctx50_seed123,constant,0.9,tdm decay=0.9
+tdm_decay70_ctx50_seed123,velocity_cartpole,tdm,50,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\tdm_decay70_ctx50_seed123,constant,0.7,tdm decay=0.7

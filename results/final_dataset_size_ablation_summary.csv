@@ -1,0 +1,13 @@
+run_name,env,memory_type,context_length,seed,n_epochs,batch_size,n_embed,n_layer,n_head,memory_dim,learning_rate,weight_decay,target_return,num_eval_episodes,mean_return,std_return,min_return,max_return,success_rate,mean_length,std_length,run_dir,eval_rtg_mode,tdm_decay,model_label,data_size
+none_data25_seed123,velocity_cartpole,none,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,9.3,0.9,8.0,11.0,0.0,9.3,0.9,results\runs\none_data25_seed123,constant,,none,25%
+none_data50_seed123,velocity_cartpole,none,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,17.85,25.69294650288285,10.0,127.0,0.0,17.85,25.69294650288285,results\runs\none_data50_seed123,constant,,none,50%
+baseline_none_seed123,velocity_cartpole,none,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\baseline_none_seed123,constant,,none,100%
+gru_data25_seed123,velocity_cartpole,gru,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,467.3,110.09091697319994,15.0,500.0,0.9,467.3,110.09091697319994,results\runs\gru_data25_seed123,constant,,gru,25%
+gru_data50_seed123,velocity_cartpole,gru,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,426.1,150.90357848639644,13.0,500.0,0.8,426.1,150.90357848639644,results\runs\gru_data50_seed123,constant,,gru,50%
+gru_seed123,velocity_cartpole,gru,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\gru_seed123,constant,,gru,100%
+lstm_data25_seed123,velocity_cartpole,lstm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,492.55,32.47379712937801,351.0,500.0,0.95,492.55,32.47379712937801,results\runs\lstm_data25_seed123,constant,,lstm,25%
+lstm_data50_seed123,velocity_cartpole,lstm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,465.9,112.235867707253,13.0,500.0,0.9,465.9,112.235867707253,results\runs\lstm_data50_seed123,constant,,lstm,50%
+lstm_seed123,velocity_cartpole,lstm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\lstm_seed123,constant,,lstm,100%
+tdm_decay70_data25_ctx20_seed123,velocity_cartpole,tdm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\tdm_decay70_data25_ctx20_seed123,constant,0.7,tdm decay=0.7,25%
+tdm_decay70_data50_ctx20_seed123,velocity_cartpole,tdm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\tdm_decay70_data50_ctx20_seed123,constant,0.7,tdm decay=0.7,50%
+tdm_decay70_ctx20_seed123,velocity_cartpole,tdm,20,123,7,64,64,3,4,64,0.001,0.0001,500.0,20,500.0,0.0,500.0,500.0,1.0,500.0,0.0,results\runs\tdm_decay70_ctx20_seed123,constant,0.7,tdm decay=0.7,100%
