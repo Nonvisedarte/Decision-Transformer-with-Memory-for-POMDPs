@@ -140,15 +140,20 @@ def main():
     dataset_path = os.path.join(args.data_dir, args.env)
     
     env = create_env(args.env)
-    
-    if args.env == 'velocity_cartpole':
+
+    if args.target_return is not None:
+        target_return = args.target_return
+    elif args.env == 'velocity_cartpole':
         target_return = 500.0
     elif args.env == 'flickering_pendulum':
-        target_return = -200.0  # the goal is to minimize loss in pendulum
+        target_return = -200.0 # the goal is to minimize loss in pendulum
     elif args.env == 'lidar_mountain_car':
-        target_return = -100.0  # the goal is to reach the flag with minimum steps
+        target_return = -100.0 # the goal is to reach the flag with minimum steps
     else:
-        target_return = args.target_return if args.target_return is not None else 500.0
+        raise ValueError(
+            f"No default target_return for env={args.env}. "
+            "Please pass --target_return explicitly."
+        )
 
     # Create a separate directory for this experiment run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
