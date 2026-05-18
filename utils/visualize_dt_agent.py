@@ -281,32 +281,57 @@ def evaluate_agent(env, model, num_episodes, context_length=20, target_return=No
         
         while not done:
             processed_obs = preprocess_obs(obs)
-            
             states.append(processed_obs)
-            
-            if len(states) <= 1:
-                action = 0
-                print(f"Step {timestep+1}: Initial action={action} (default)")
+
+            context_size = min(len(states), context_length)
+            context_states = np.array(states[-context_size:])
+
+            if context_size == 1:
+                context_actions = np.array([0])
+            elif len(actions) >= context_size - 1:
+                context_actions = np.array(actions[-(context_size - 1):] + [0])
             else:
-                context_size = min(len(states), context_length)
-                context_states = np.array(states[-context_size:])
-                
-                if len(actions) >= context_size - 1:
-                    context_actions = np.array(actions[-(context_size-1):] + [0])
-                else:
-                    context_actions = np.array(actions + [0] * (context_size - 1 - len(actions)))
-                
-                rtg = target_return - episode_return
-                context_rtgs = np.full(context_size, rtg)
-                
-                action = model.get_action(
-                    states=context_states,
-                    actions=context_actions,
-                    rtgs=context_rtgs.reshape(-1, 1),
-                    device=device
+                context_actions = np.array(
+                    actions + [0] * (context_size - 1 - len(actions))
                 )
-                
-                print(f"Step {timestep+1}: Action={action}, RTG={rtg:.2f}")
+
+            rtg = target_return - episode_return
+            context_rtgs = np.full(context_size, rtg, dtype=np.float32)
+
+            action = model.get_action(
+                states=context_states,
+                actions=context_actions,
+                rtgs=context_rtgs.reshape(-1, 1),
+                device=device
+            )
+
+            print(f"Step {timestep + 1}: Action={action}, RTG={rtg:.2f}")
+
+            # states.append(processed_obs)
+            #
+            # if len(states) <= 1:
+            #     action = 0
+            #     print(f"Step {timestep+1}: Initial action={action} (default)")
+            # else:
+            #     context_size = min(len(states), context_length)
+            #     context_states = np.array(states[-context_size:])
+            #
+            #     if len(actions) >= context_size - 1:
+            #         context_actions = np.array(actions[-(context_size-1):] + [0])
+            #     else:
+            #         context_actions = np.array(actions + [0] * (context_size - 1 - len(actions)))
+            #
+            #     rtg = target_return - episode_return
+            #     context_rtgs = np.full(context_size, rtg)
+            #
+            #     action = model.get_action(
+            #         states=context_states,
+            #         actions=context_actions,
+            #         rtgs=context_rtgs.reshape(-1, 1),
+            #         device=device
+            #     )
+            #
+            #     print(f"Step {timestep+1}: Action={action}, RTG={rtg:.2f}")
             
             next_obs, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
