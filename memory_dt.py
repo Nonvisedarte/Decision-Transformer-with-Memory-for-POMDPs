@@ -155,7 +155,7 @@ class PositionalEncoding(nn.Module):
 
 class MemoryDecisionTransformer(nn.Module):
     def __init__(self, state_dim, n_actions, n_embed=128, n_layer=2, n_head=4, context_length=20, 
-                 memory_type='gru', memory_dim=64, dropout=0.1):
+                 memory_type='gru', memory_dim=64, dropout=0.1, tdm_decay=0.90):
         """Simple Decision Transformer with memory for POMDP."""
         super(MemoryDecisionTransformer, self).__init__()
         
@@ -195,7 +195,7 @@ class MemoryDecisionTransformer(nn.Module):
             self.memory = nn.Identity()
             self.tdm_delta_encoder = nn.Linear(n_embed, memory_dim)
             self.memory_proj = nn.Linear(memory_dim, n_embed)
-            self.tdm_decay = 0.90
+            self.tdm_decay = float(tdm_decay)
         else:
             self.memory = None
             self.memory_proj = None
@@ -552,7 +552,7 @@ class MemoryDecisionTransformer(nn.Module):
 
 def train_memory_dt(
         env_name, dataset_path, n_epochs=10, batch_size=64, context_length=20,
-        n_embed=128, n_layer=2, n_head=4, memory_type='gru', memory_dim=64,
+        n_embed=128, n_layer=2, n_head=4, memory_type='gru', memory_dim=64, tdm_decay=0.90,
         learning_rate=1e-4, weight_decay=1e-4, debug=False,
         run_dir=None, run_config=None
     ):
@@ -683,6 +683,7 @@ def train_memory_dt(
             "n_layer": n_layer,
             "n_head": n_head,
             "memory_dim": memory_dim,
+            "tdm_decay": float(tdm_decay) if memory_type == "tdm" else None,
             "learning_rate": learning_rate,
             "weight_decay": weight_decay,
             "dataset_action_counts": dataset_action_counts.tolist(),
@@ -720,7 +721,8 @@ def train_memory_dt(
         context_length=context_length,
         memory_type=memory_type,
         memory_dim=memory_dim,
-        dropout=0.1
+        dropout=0.1,
+        tdm_decay=tdm_decay
     )
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1103,6 +1105,7 @@ def train_memory_dt(
         "best_epoch": best_epoch,
         "best_val_return": float(best_val_return),
         "loaded_back_into_returned_model": True,
+        "tdm_decay": float(tdm_decay) if memory_type == "tdm" else None,
     }
 
     best_metadata_path = os.path.join(

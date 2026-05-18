@@ -31,6 +31,8 @@ def parse_args():
                         help='Type of memory used in the model')
     parser.add_argument('--memory_dim', type=int, default=64,
                         help='Hidden dimension of memory state')
+    parser.add_argument('--tdm_decay', type=float, default=0.90,
+        help='Decay factor for Temporal Difference Memory; only used when memory_type=tdm')
     parser.add_argument('--n_layer', type=int, default=3,
                         help='Number of transformer layers')
     parser.add_argument('--n_head', type=int, default=4,
@@ -158,7 +160,8 @@ def load_model(model_path, env, args):
         n_head=n_head,
         context_length=args.context_length,
         memory_type=memory_type,
-        memory_dim=memory_dim
+        memory_dim=memory_dim,
+        tdm_decay=args.tdm_decay,
     )
     
     if action_head_sequential:

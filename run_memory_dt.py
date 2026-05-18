@@ -51,6 +51,8 @@ def parse_args():
                         help='Type of memory to use (gru, lstm, tdm or none)')
     parser.add_argument('--memory_dim', type=int, default=64,
                         help='Dimension of memory state')
+    parser.add_argument('--tdm_decay', type=float, default=0.90,
+        help='Decay factor for Temporal Difference Memory; only used when memory_type=tdm')
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help='Learning rate')
     parser.add_argument('--weight_decay', type=float, default=1e-4,
@@ -120,6 +122,7 @@ def load_model(model_path, env, args):
         context_length=args.context_length,
         memory_type=args.memory_type if args.memory_type != 'none' else None,
         memory_dim=args.memory_dim,
+        tdm_decay=args.tdm_decay
         ##debug=args.debug
     )
     
@@ -198,6 +201,7 @@ def main():
             n_head=args.n_head,
             memory_type=args.memory_type,
             memory_dim=args.memory_dim,
+            tdm_decay=args.tdm_decay,
             learning_rate=args.learning_rate,
             weight_decay=args.weight_decay,
             debug=args.debug,
@@ -239,7 +243,8 @@ def main():
         "max_return": float(np.max(returns)),
         "success_rate": float(success_rate),
         "returns": [float(r) for r in returns],
-        "lengths": [int(l) for l in episode_lengths]
+        "lengths": [int(l) for l in episode_lengths],
+        "tdm_decay": float(args.tdm_decay) if memory_label == "tdm" else None,
     }
 
     final_eval_path = os.path.join(run_dir, "final_eval.json")
@@ -304,6 +309,7 @@ def main():
         "std_length",
         "run_dir",
         "eval_rtg_mode",
+        "tdm_decay",
     ]
 
     file_exists = os.path.exists(summary_path)
@@ -339,6 +345,7 @@ def main():
             "std_length": float(np.std(episode_lengths)),
             "run_dir": run_dir,
             "eval_rtg_mode": args.eval_rtg_mode,
+            "tdm_decay": float(args.tdm_decay) if memory_label == "tdm" else "",
         })
 
     print(f"Updated experiments summary: {summary_path}")
