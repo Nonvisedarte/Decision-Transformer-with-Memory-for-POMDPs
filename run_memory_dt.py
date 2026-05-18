@@ -47,8 +47,8 @@ def parse_args():
     parser.add_argument('--n_head', type=int, default=4,
                         help='Number of attention heads')
     parser.add_argument('--memory_type', type=str, default='gru',
-                        choices=['gru', 'lstm', 'none'],
-                        help='Type of memory to use (gru, lstm, or none)')
+                        choices=['gru', 'lstm', 'tdm', 'none'],
+                        help='Type of memory to use (gru, lstm, tdm or none)')
     parser.add_argument('--memory_dim', type=int, default=64,
                         help='Dimension of memory state')
     parser.add_argument('--learning_rate', type=float, default=1e-3,

@@ -164,6 +164,7 @@ class MemoryDecisionTransformer(nn.Module):
         self.n_embed = n_embed
         self.context_length = context_length
         self.memory_type = memory_type
+        self.memory_dim = memory_dim
         
         # (R,o,a) encoders
         self.state_encoder = nn.Linear(state_dim, n_embed)
@@ -189,6 +190,12 @@ class MemoryDecisionTransformer(nn.Module):
                 batch_first=True
             )
             self.memory_proj = nn.Linear(memory_dim, n_embed)
+        elif memory_type == 'tdm':
+            # Temporal Difference Memory: tracks changes between consecutive state embeddings.
+            self.memory = nn.Identity()
+            self.tdm_delta_encoder = nn.Linear(n_embed, memory_dim)
+            self.memory_proj = nn.Linear(memory_dim, n_embed)
+            self.tdm_decay = 0.90
         else:
             self.memory = None
             self.memory_proj = None
@@ -290,6 +297,33 @@ class MemoryDecisionTransformer(nn.Module):
                         state_embeddings,
                         self.hidden_state
                     )
+                elif self.memory_type == 'tdm':
+                    prev_embeddings = torch.cat(
+                        [state_embeddings[:, :1, :], state_embeddings[:, :-1, :]],
+                        dim=1
+                    )
+                    delta_embeddings = state_embeddings - prev_embeddings
+
+                    delta_features = torch.tanh(
+                        self.tdm_delta_encoder(delta_embeddings)
+                    )
+
+                    memory_state = torch.zeros(
+                        batch_size,
+                        self.memory_dim,
+                        device=device,
+                        dtype=state_embeddings.dtype
+                    )
+
+                    memory_steps = []
+                    for t in range(seq_length):
+                        memory_state = (
+                                self.tdm_decay * memory_state
+                                + (1.0 - self.tdm_decay) * delta_features[:, t, :]
+                        )
+                        memory_steps.append(memory_state.unsqueeze(1))
+
+                    memory_out = torch.cat(memory_steps, dim=1)
 
             # project memory to embedding dimension
             memory_embedding = self.memory_proj(memory_out)
@@ -403,6 +437,43 @@ class MemoryDecisionTransformer(nn.Module):
                 state_embedding,
                 self.hidden_state
             )
+        elif self.memory_type == 'tdm':
+            current_embedding = state_embedding[:, -1, :]
+
+            if (
+                    self.hidden_state is None
+                    or not isinstance(self.hidden_state, tuple)
+                    or self.hidden_state[0].size(0) != batch_size
+                    or self.hidden_state[0].device != device
+            ):
+                memory_state = torch.zeros(
+                    batch_size,
+                    self.memory_dim,
+                    device=device,
+                    dtype=state_embedding.dtype
+                )
+                prev_embedding = current_embedding.detach()
+                delta_embedding = torch.zeros_like(current_embedding)
+            else:
+                memory_state, prev_embedding = self.hidden_state
+                prev_embedding = prev_embedding.to(device)
+                delta_embedding = current_embedding - prev_embedding
+
+            delta_feature = torch.tanh(
+                self.tdm_delta_encoder(delta_embedding)
+            )
+
+            memory_state = (
+                    self.tdm_decay * memory_state
+                    + (1.0 - self.tdm_decay) * delta_feature
+            )
+
+            self.hidden_state = (
+                memory_state.detach(),
+                current_embedding.detach()
+            )
+
+            memory_out = memory_state.unsqueeze(1)
 
         else:
             return None
@@ -447,7 +518,7 @@ class MemoryDecisionTransformer(nn.Module):
         
         # forward pass
         with torch.no_grad():
-            if self.memory_type in ['gru', 'lstm']:
+            if self.memory_type in ['gru', 'lstm', 'tdm']:
                 latest_state = states[:, -1:, :]
                 self.update_inference_memory(latest_state)
 

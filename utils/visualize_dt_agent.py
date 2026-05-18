@@ -27,7 +27,7 @@ def parse_args():
                         help='Number of episodes to visualize')
     parser.add_argument('--context_length', type=int, default=20,
                         help='Context length for the transformer')
-    parser.add_argument('--memory_type', type=str, default='gru', choices=['gru', 'lstm', 'none'],
+    parser.add_argument('--memory_type', type=str, default='gru', choices=['gru', 'lstm', 'tdm', 'none'],
                         help='Type of memory used in the model')
     parser.add_argument('--memory_dim', type=int, default=64,
                         help='Hidden dimension of memory state')
